@@ -1,0 +1,10 @@
+location = ${AUTHENTIK_PATH_NOSLASH} {
+    return 301 ${AUTHENTIK_PATH};
+}
+
+location ^~ ${AUTHENTIK_PATH} {
+    set $tow_authentik_upstream ${AUTHENTIK_UPSTREAM};
+    proxy_pass $tow_authentik_upstream;
+    include /etc/nginx/launch/proxy-headers.conf;
+    proxy_buffering off;
+}

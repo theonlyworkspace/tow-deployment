@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily TOW managed backup retention pruning
+
+[Timer]
+OnCalendar=@PRUNE_ONCALENDAR@
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

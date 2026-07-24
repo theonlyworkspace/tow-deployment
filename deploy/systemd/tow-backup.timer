@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily TOW managed encrypted backup
+
+[Timer]
+OnCalendar=@BACKUP_ONCALENDAR@
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

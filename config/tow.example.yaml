@@ -1,0 +1,182 @@
+runtime:
+  app_name: TOW
+  public_app_url:
+  backend_cors_origins:
+    - http://localhost:3000
+    - http://localhost:8000
+  # Backends honor X-Forwarded-For/X-Real-IP only when the immediate peer
+  # is in these CIDR ranges. Narrow this to your reverse proxy IPs in production.
+  trusted_proxy_cidrs:
+    - 127.0.0.1/32
+    - ::1/128
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - fc00::/7
+
+# Remote Model Context Protocol clients connect at /api/mcp with a TOW personal access token.
+# When public_app_url is set, its host and origin are allowed automatically. These optional
+# additions are useful only when an internal proxy reaches TOW through another host name.
+mcp:
+  allowed_hosts: []
+  allowed_origins: []
+  max_request_bytes: 262144
+  max_concurrency: 8
+  max_concurrency_per_token: 4
+
+ai:
+  openai_base_url:
+  openai_reasoning_model: gpt-5.2
+  openai_reasoning_effort: high
+  openai_fast_model: gpt-5.2
+  openai_title_model:
+  openai_onboarding_model:
+  openai_embedding_model: text-embedding-3-small
+  max_tool_rounds: 100
+  embedding_dim: 1536
+
+security:
+  session_cookie_name: tow_session
+  # Set true for HTTPS deployments. OIDC mode also forces Secure cookies when public_app_url is https.
+  session_cookie_secure: false
+  session_max_age_seconds: 2592000
+  # Generate once (32+ cryptographically random characters), back it up, and
+  # keep it immutable while external-identity tombstones exist. A missing or
+  # changed value makes OIDC fail closed once the first tombstone is recorded.
+  privacy_identity_hmac_secret:
+
+# Account deletion (full erasure) stays inert until this section is completed
+# and the readiness endpoint reports ready. Keep the ledger outside /app/data
+# and outside any database/data-volume restore operation.
+privacy:
+  full_erasure_enabled: false
+  # Name or version of your organisation's data-retention policy, e.g.
+  # "data-retention-2026". Stamped into deletion evidence records.
+  policy_reference:
+  identity:
+    # Only enable for Authentik accounts provisioned and controlled by TOW.
+    # Corporate LDAP/SAML/OIDC source accounts are never deleted by TOW.
+    managed_authentik_user_deletion_enabled: false
+    managed_authentik_issuers: []
+    # When managed deletion is enabled, TOW verifies Authentik's GDPR cleanup
+    # flag and that its actual event retention does not exceed this limit.
+    authentik_event_retention_days:
+  email:
+    relay_retention_mode: unknown
+    relay_retention_days:
+    content_retention_days: 30
+    metadata_retention_days: 365
+  processors:
+    # Every active processor must declare: zdr, delete_api, or bounded_retention.
+    registry: {}
+    bounded_retention_days:
+  backups:
+    # Must be explicitly declared before full erasure intake is enabled.
+    # bundled_only attests that the bundled controller is the only backup
+    # system; external_contract requires every controller below to register
+    # backup and prune receipts through the privacy backup CLI.
+    coverage_mode: undeclared
+    restore_data_roots:
+      - /app/data
+    # external_contract entries require id, contract_version, retention_days
+    # (1-30), and true attestations for encrypted, journal_replay, and
+    # destruction_receipts. They must also register current receipts in TOW.
+    external_systems: []
+    ledger_path: /app/privacy-ledger/erasure.jsonl
+    # Compose deployments also expose the host-side mount declaration so
+    # readiness can reject repository-relative production ledgers. Compose
+    # derives this declaration from TOW_PRIVACY_LEDGER_DIR.
+    ledger_host_path:
+    # Authenticated monotonic state that prevents an old database restore from
+    # forgetting newer backup lifecycle events. Defaults beside ledger_path
+    # and must remain outside every restore_data_root.
+    registry_head_path:
+    ledger_hmac_secret:
+    age_recipient:
+
+auth:
+  # builtin keeps local email/password auth. oidc redirects users to authentik or another OIDC provider.
+  mode: builtin
+  oidc:
+    # For authentik this is usually https://auth.example.com/application/o/tow/
+    issuer:
+    client_id:
+    scopes:
+      - openid
+      - profile
+      - email
+    username_claim: preferred_username
+    email_claim: email
+    email_verified_claim: email_verified
+    given_name_claim: given_name
+    family_name_claim: family_name
+    groups_claim: groups
+    require_email_verified: false
+    # Opt in to redirecting through the provider logout endpoint after TOW clears its session.
+    provider_logout_enabled: false
+  signup:
+    # Opt-in public self-service signup. Requires runtime.public_app_url and working email delivery.
+    enabled: false
+    # Optional Authentik enrollment/start flow for OIDC public signup.
+    # The bundled authentik bootstrap creates tow-public-enrollment when SIGNUP_ENABLED=true.
+    # Example: https://auth.example.com/if/flow/tow-public-enrollment/
+    oidc_start_url:
+    verification_token_ttl_hours: 24
+    resend_cooldown_seconds: 60
+  organization_auth:
+    # Enables organisation owners/admins to configure their own authentik-backed provider.
+    enabled: false
+    # Server admins can restrict which upstream source types org admins may configure.
+    allowed_source_types:
+      - ldap
+      - saml
+      - oidc
+
+database:
+  # HTTP/API pool. Keep max pool + overflow plus worker pool below Postgres max_connections.
+  pool_size: 15
+  max_overflow: 10
+  pool_timeout_seconds: 10
+  pool_recycle_seconds: 1800
+  # In-process AI/background worker pool.
+  worker_pool_size: 10
+  worker_max_overflow: 10
+  worker_pool_timeout_seconds: 10
+  worker_pool_recycle_seconds: 1800
+
+background:
+  operating_background_enabled: true
+  operating_background_interval_seconds: 900
+  ticket_conflict_scan_hour_utc: 2
+
+jobs:
+  ai_queue_max_concurrency: 2
+  ai_queue_status_retention_seconds: 300
+
+uploads:
+  upload_storage_path: /app/data/uploads
+  upload_max_bytes: 26214400
+
+search:
+  meilisearch_url: http://meilisearch:7700
+  meilisearch_index_prefix: tow
+  meilisearch_timeout_seconds: 3
+  worker_batch_size: 100
+  worker_poll_seconds: 2
+  worker_lock_timeout_seconds: 300
+  worker_max_attempts: 10
+  candidate_limit: 200
+
+email:
+  transport: console
+  from_address: TOW <noreply@example.com>
+  reply_to:
+  file_dir: /app/data/emails
+  worker_batch_size: 10
+  worker_poll_seconds: 5
+  worker_lock_timeout_seconds: 600
+  smtp:
+    host:
+    port: 587
+    tls_mode: starttls
+    timeout_seconds: 30

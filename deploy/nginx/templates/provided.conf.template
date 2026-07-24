@@ -1,0 +1,44 @@
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 80;
+    server_name ${PUBLIC_HOST};
+
+    location = /__tow_proxy_health {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        access_log off;
+        default_type text/plain;
+        alias /etc/nginx/launch/health.txt;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${PUBLIC_HOST};
+    client_max_body_size ${PROXY_CLIENT_MAX_BODY_SIZE};
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_vary on;
+    gzip_types application/javascript application/json application/xml image/svg+xml text/css text/plain text/xml;
+
+    ssl_certificate ${TLS_CERT_PATH};
+    ssl_certificate_key ${TLS_KEY_PATH};
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    include /tmp/tow-nginx-rendered/locations.conf;
+}

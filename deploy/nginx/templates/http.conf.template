@@ -1,0 +1,18 @@
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 80;
+    server_name ${PUBLIC_HOST};
+    client_max_body_size ${PROXY_CLIENT_MAX_BODY_SIZE};
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_vary on;
+    gzip_types application/javascript application/json application/xml image/svg+xml text/css text/plain text/xml;
+
+    include /tmp/tow-nginx-rendered/locations.conf;
+}

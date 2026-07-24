@@ -1,0 +1,15 @@
+# Operator-owned files. An update must never replace these.
+.env
+.env.backup-*
+config/tow.yaml
+config/tow.yaml.backup-*
+compose.override.yaml
+
+# TLS certificates and generated key material.
+deploy/certs/*
+!deploy/certs/.gitkeep
+secrets/
+
+# Local data created by evaluation installs and backups.
+.tow/
+backups/

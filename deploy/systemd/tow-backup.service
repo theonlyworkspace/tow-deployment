@@ -1,0 +1,10 @@
+[Unit]
+Description=TOW managed encrypted backup
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=@PROJECT_DIR@
+ExecStart=@PROJECT_DIR@/scripts/backup-system.sh --output-dir @BACKUP_ROOT@

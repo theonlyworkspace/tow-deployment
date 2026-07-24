@@ -1,0 +1,10 @@
+[Unit]
+Description=TOW managed backup retention pruning
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=@PROJECT_DIR@
+ExecStart=@PROJECT_DIR@/scripts/prune-system-backups.sh --output-dir @BACKUP_ROOT@

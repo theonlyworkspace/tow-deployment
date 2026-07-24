@@ -1,0 +1,323 @@
+name: tow
+
+x-backend-environment: &backend-environment
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tow}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-tow}
+  TOW_CONFIG_PATH: /app/config/tow.yaml
+  MEILISEARCH_URL: http://meilisearch:7700
+  MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY:?Set MEILISEARCH_API_KEY in .env}
+
+x-backend-common: &backend-common
+  image: anistow/tow-backend:${TOW_VERSION:?Set TOW_VERSION in .env to an exact release tag}
+  env_file:
+    - path: .env
+      required: true
+  environment: *backend-environment
+  volumes:
+    - tow_backend_data:/app/data
+    - type: bind
+      source: ./config/tow.yaml
+      target: /app/config/tow.yaml
+      read_only: true
+      bind:
+        create_host_path: false
+
+x-authentik-environment: &authentik-environment
+  # These stay optional while the profile is disabled; the Authentik runbook
+  # requires operators to set them before enabling the profile.
+  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-}
+  AUTHENTIK_REDIS__HOST: authentik-redis
+  AUTHENTIK_POSTGRESQL__HOST: authentik-db
+  AUTHENTIK_POSTGRESQL__USER: authentik
+  AUTHENTIK_POSTGRESQL__NAME: authentik
+  AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD:-}
+  AUTHENTIK_POSTGRESQL__CONN_MAX_AGE: ${AUTHENTIK_POSTGRESQL__CONN_MAX_AGE:-0}
+  AUTHENTIK_POSTGRESQL__CONN_HEALTH_CHECKS: ${AUTHENTIK_POSTGRESQL__CONN_HEALTH_CHECKS:-true}
+  AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com}
+  AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-}
+  AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:-}
+  AUTHENTIK_WEB__PATH: ${AUTHENTIK_WEB__PATH:-/}
+  AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+  AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+  AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+
+x-authentik-common: &authentik-common
+  profiles: ["authentik"]
+  image: ghcr.io/goauthentik/server:${AUTHENTIK_TAG:-2026.5.0}
+  restart: unless-stopped
+  shm_size: 512mb
+  environment: *authentik-environment
+  volumes:
+    - tow_authentik_data:/data
+    - tow_authentik_media:/data/media
+    - tow_authentik_templates:/templates
+  depends_on:
+    authentik-db:
+      condition: service_healthy
+    authentik-redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-tow}
+    volumes:
+      - tow_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY:?Set MEILISEARCH_API_KEY in .env}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - tow_meilisearch:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7700/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  schema-migrate:
+    <<: *backend-common
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m app.scripts.database_upgrade
+
+  backend:
+    <<: *backend-common
+    restart: unless-stopped
+    environment:
+      <<: *backend-environment
+      PRIVACY_LEDGER_HOST_PATH: ${TOW_PRIVACY_LEDGER_DIR:?Set TOW_PRIVACY_LEDGER_DIR in .env}
+    volumes:
+      - tow_backend_data:/app/data
+      - type: bind
+        source: ./config/tow.yaml
+        target: /app/config/tow.yaml
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${TOW_PRIVACY_LEDGER_DIR:?Set TOW_PRIVACY_LEDGER_DIR in .env}
+        target: /app/privacy-ledger
+        bind:
+          create_host_path: false
+    depends_on:
+      schema-migrate:
+        condition: service_completed_successfully
+        restart: true
+      meilisearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 30s
+    command:
+      - /bin/sh
+      - -c
+      - python -m app.scripts.database_schema_guard && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  search-worker:
+    <<: *backend-common
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+      meilisearch:
+        condition: service_healthy
+    stop_grace_period: 30s
+    command:
+      - /bin/sh
+      - -c
+      - python -m app.scripts.database_schema_guard && exec python -m app.search_worker
+
+  email-worker:
+    <<: *backend-common
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    stop_grace_period: 30s
+    command:
+      - /bin/sh
+      - -c
+      - python -m app.scripts.database_schema_guard && exec python -m app.email_worker
+
+  migration-worker:
+    <<: *backend-common
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    stop_grace_period: 30s
+    command:
+      - /bin/sh
+      - -c
+      - python -m app.scripts.database_schema_guard && exec python -m app.migration_worker
+
+  frontend:
+    image: anistow/tow-frontend:${TOW_VERSION:?Set TOW_VERSION in .env to an exact release tag}
+    restart: unless-stopped
+    environment:
+      API_PROXY_TARGET: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:-localhost}
+      TLS_MODE: ${TLS_MODE:-off}
+      TLS_CERT_PATH: ${TLS_CERT_PATH:-/etc/nginx/certs/fullchain.pem}
+      TLS_KEY_PATH: ${TLS_KEY_PATH:-/etc/nginx/certs/privkey.pem}
+      PROXY_CLIENT_MAX_BODY_SIZE: ${PROXY_CLIENT_MAX_BODY_SIZE:-25m}
+      AUTHENTIK_PATH_ENABLED: ${AUTHENTIK_PATH_ENABLED:-false}
+      AUTHENTIK_PATH: ${AUTHENTIK_PATH:-/authentik/}
+      AUTHENTIK_UPSTREAM: ${AUTHENTIK_UPSTREAM:-http://authentik-server:9000}
+    entrypoint: ["/bin/sh", "/etc/nginx/launch/entrypoint.sh"]
+    command: ["nginx", "-g", "daemon off;"]
+    ports:
+      - "${PROXY_BIND:-0.0.0.0}:${PROXY_HTTP_PORT:-80}:80"
+      - "${PROXY_BIND:-0.0.0.0}:${PROXY_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/nginx:/etc/nginx/launch:ro
+      - ${TLS_CERT_DIR:-./deploy/certs}:/etc/nginx/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/__tow_proxy_health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  docs:
+    profiles: ["docs"]
+    image: anistow/tow-docs:${TOW_VERSION:?Set TOW_VERSION in .env to an exact release tag}
+    restart: unless-stopped
+    ports:
+      - "${DOCS_BIND:-127.0.0.1}:${DOCS_PORT:-3001}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  authentik-db:
+    profiles: ["authentik"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=${AUTHENTIK_POSTGRES_MAX_CONNECTIONS:-200}"]
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD:-}
+      POSTGRES_DB: authentik
+    volumes:
+      - tow_authentik_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  authentik-redis:
+    profiles: ["authentik"]
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - tow_authentik_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  authentik-server:
+    <<: *authentik-common
+    command: server
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  authentik-worker:
+    <<: *authentik-common
+    command: worker
+
+  authentik-bootstrap:
+    profiles: ["authentik-bootstrap"]
+    image: anistow/tow-backend:${TOW_VERSION:?Set TOW_VERSION in .env to an exact release tag}
+    restart: "no"
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      <<: *backend-environment
+      AUTHENTIK_INTERNAL_URL: http://authentik-server:9000
+      AUTHENTIK_PUBLIC_URL: ${AUTHENTIK_PUBLIC_URL:-http://localhost:9000}
+      AUTHENTIK_WEB__PATH: ${AUTHENTIK_WEB__PATH:-/}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-tow}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:-}
+      TOW_AUTHENTIK_APPLICATION_SLUG: ${TOW_AUTHENTIK_APPLICATION_SLUG:-tow}
+      TOW_AUTHENTIK_APPLICATION_NAME: ${TOW_AUTHENTIK_APPLICATION_NAME:-TOW}
+      SIGNUP_ENABLED: ${SIGNUP_ENABLED:-false}
+    volumes:
+      - tow_backend_data:/app/data
+      - type: bind
+        source: ./config/tow.yaml
+        target: /app/config/tow.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - tow_authentik_data:/data
+      - tow_authentik_media:/data/media
+    depends_on:
+      backend:
+        condition: service_healthy
+      authentik-server:
+        condition: service_healthy
+      authentik-worker:
+        condition: service_started
+    command: python -m app.scripts.bootstrap_authentik
+
+volumes:
+  tow_postgres:
+  tow_backend_data:
+  tow_meilisearch:
+  tow_authentik_postgres:
+  tow_authentik_redis:
+  tow_authentik_data:
+  tow_authentik_media:
+  tow_authentik_templates:

@@ -1,0 +1,20 @@
+# Copy this file to compose.override.yaml and replace registry.example.com/tow
+# with the private registry namespace used by your deployment. Compose loads
+# compose.override.yaml automatically alongside the root compose.yaml.
+services:
+  schema-migrate:
+    image: registry.example.com/tow/backend:${TOW_VERSION:?Set TOW_VERSION in .env}
+  backend:
+    image: registry.example.com/tow/backend:${TOW_VERSION:?Set TOW_VERSION in .env}
+  search-worker:
+    image: registry.example.com/tow/backend:${TOW_VERSION:?Set TOW_VERSION in .env}
+  email-worker:
+    image: registry.example.com/tow/backend:${TOW_VERSION:?Set TOW_VERSION in .env}
+  migration-worker:
+    image: registry.example.com/tow/backend:${TOW_VERSION:?Set TOW_VERSION in .env}
+  frontend:
+    image: registry.example.com/tow/frontend:${TOW_VERSION:?Set TOW_VERSION in .env}
+  docs:
+    image: registry.example.com/tow/docs:${TOW_VERSION:?Set TOW_VERSION in .env}
+  authentik-bootstrap:
+    image: registry.example.com/tow/backend:${TOW_VERSION:?Set TOW_VERSION in .env}
