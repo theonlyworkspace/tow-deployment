@@ -10,6 +10,8 @@ services:
     image: registry.example.com/tow/backend:${TOW_VERSION:?Set TOW_VERSION in .env}
   email-worker:
     image: registry.example.com/tow/backend:${TOW_VERSION:?Set TOW_VERSION in .env}
+  inbound-email-worker:
+    image: registry.example.com/tow/backend:${TOW_VERSION:?Set TOW_VERSION in .env}
   migration-worker:
     image: registry.example.com/tow/backend:${TOW_VERSION:?Set TOW_VERSION in .env}
   frontend:

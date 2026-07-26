@@ -5,6 +5,9 @@ x-backend-environment: &backend-environment
   TOW_CONFIG_PATH: /app/config/tow.yaml
   MEILISEARCH_URL: http://meilisearch:7700
   MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY:?Set MEILISEARCH_API_KEY in .env}
+  # Managed deletion talks directly to the bundled Authentik service. Override
+  # this only when the managed Authentik API lives outside this Compose project.
+  AUTHENTIK_INTERNAL_URL: ${AUTHENTIK_INTERNAL_URL:-http://authentik-server:9000}
 
 x-backend-common: &backend-common
   image: anistow/tow-backend:${TOW_VERSION:?Set TOW_VERSION in .env to an exact release tag}
@@ -160,6 +163,19 @@ services:
       - -c
       - python -m app.scripts.database_schema_guard && exec python -m app.email_worker
 
+  inbound-email-worker:
+    <<: *backend-common
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    stop_grace_period: 30s
+    command:
+      - /bin/sh
+      - -c
+      - python -m app.scripts.database_schema_guard && exec python -m app.inbound_email_worker
+
   migration-worker:
     <<: *backend-common
     restart: unless-stopped
@@ -178,6 +194,7 @@ services:
     restart: unless-stopped
     environment:
       API_PROXY_TARGET: http://backend:8000
+      CSP_CONNECT_SRC: ${CSP_CONNECT_SRC:-}
     depends_on:
       backend:
         condition: service_healthy

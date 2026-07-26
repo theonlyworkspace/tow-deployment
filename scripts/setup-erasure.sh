@@ -28,15 +28,15 @@ Options:
                          Your SMTP relay's retention window in days (only
                          used when email transport is smtp). Default: 30
   --openai zdr|bounded_retention|none
-                         Retention declaration for the OpenAI route when
-                         OPENAI_API_KEY is set. Default: bounded_retention
+                         Retention declaration for the configured AI route
+                         when OPENAI_API_KEY is set. Default: bounded_retention
   --retention-days N     Provider retention window for bounded_retention.
                          Default: 30
   --managed-authentik-deletion
                          Also delete TOW-managed accounts inside the bundled
                          authentik (never corporate LDAP/SAML/OIDC accounts).
   --authentik-event-retention-days N
-                         Maximum accepted authentik event retention (1-30).
+                         Configure and require authentik event retention (1-30).
                          Default: 30
   --configure-only       Write config/tow.yaml and stop: no backfill, no
                          readiness check, deletion NOT enabled.
@@ -127,10 +127,29 @@ fi
 email_transport="$(read_yaml_value '  ' transport)"
 auth_mode="$(read_yaml_value '  ' mode)"
 oidc_issuer="$(read_yaml_value '    ' issuer)"
-openai_base_url="$(read_yaml_value '  ' openai_base_url)"
+openai_base_url="$(read_env_key OPENAI_BASE_URL)"
+[[ -n "$openai_base_url" ]] || openai_base_url="$(read_yaml_value '  ' openai_base_url)"
 existing_policy="$(read_yaml_value '  ' policy_reference)"
 openai_key="$(read_env_key OPENAI_API_KEY)"
 compose_profiles="$(read_env_key COMPOSE_PROFILES)"
+processor_key="$(
+  python3 - "$openai_base_url" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+base_url = sys.argv[1].strip()
+if not base_url:
+    print("openai")
+else:
+    hostname = (urlsplit(base_url).hostname or "").lower()
+    if hostname == "api.openai.com" or hostname.endswith(".openai.com"):
+        print("openai")
+    elif hostname == "openrouter.ai" or hostname.endswith(".openrouter.ai"):
+        print("openrouter")
+    else:
+        print(f"custom:{hostname or 'unknown'}")
+PY
+)"
 
 # ---------------------------------------------------------------------------
 # Questions
@@ -187,11 +206,11 @@ if [[ -n "$openai_key" && -z "$openai_mode" ]]; then
   if [[ $non_interactive -eq 1 ]]; then
     openai_mode="bounded_retention"
   else
-    printf '\nAn OpenAI API key is configured. How does OpenAI retain your request\n'
-    printf 'data? Declare zdr ONLY if your organisation has a contractual\n'
-    printf 'zero-data-retention agreement; otherwise declare the bounded\n'
-    printf 'retention window (OpenAI'\''s standard API retention is 30 days).\n'
-    read -r -p "Zero-data-retention contract with OpenAI? [y/N]: " reply
+    printf '\nAn AI API key is configured for the %s route. How does that processor\n' "$processor_key"
+    printf 'retain your request data? Declare zdr only when account-level\n'
+    printf 'guardrails or your contract enforce zero data retention; otherwise\n'
+    printf 'declare the bounded retention window.\n'
+    read -r -p "Zero-data-retention policy for ${processor_key}? [y/N]: " reply
     case "$reply" in
       y|Y|yes|YES|Yes) openai_mode="zdr" ;;
       *)
@@ -207,11 +226,6 @@ case "$openai_mode" in
   zdr|bounded_retention|none) ;;
   *) fail "--openai must be zdr, bounded_retention, or none." ;;
 esac
-if [[ -n "$openai_base_url" && "$openai_mode" != "none" ]]; then
-  warn "ai.openai_base_url is set to a custom endpoint. If readiness reports a"
-  warn "processor blocker, the route key may need to be custom:<hostname>"
-  warn "instead of openai — adjust privacy.processors.registry in tow.yaml."
-fi
 
 if [[ "$auth_mode" == "oidc" && "$compose_profiles" == *authentik* && -z "$managed_authentik" ]]; then
   if [[ $non_interactive -eq 1 ]]; then
@@ -247,6 +261,7 @@ apply_privacy_config() {
   TOW_ERASE_EMAIL_TRANSPORT="$email_transport" \
   TOW_ERASE_RELAY_DAYS="$relay_retention_days" \
   TOW_ERASE_OPENAI_MODE="$openai_mode" \
+  TOW_ERASE_PROCESSOR_KEY="$processor_key" \
   TOW_ERASE_RETENTION_DAYS="$retention_days" \
   TOW_ERASE_MANAGED_AUTHENTIK="$managed_authentik" \
   TOW_ERASE_ISSUER="$oidc_issuer" \
@@ -294,10 +309,14 @@ if os.environ["TOW_ERASE_EMAIL_TRANSPORT"] == "smtp":
 
 openai_mode = os.environ["TOW_ERASE_OPENAI_MODE"]
 if openai_mode != "none":
-    if re.search(r"^      openai:.*$", block, flags=re.M):
-        set_line(r"^      openai:.*$", f"      openai: {openai_mode}")
+    processor_key = os.environ["TOW_ERASE_PROCESSOR_KEY"]
+    processor_pattern = rf"^      {re.escape(processor_key)}:.*$"
+    if re.search(processor_pattern, block, flags=re.M):
+        set_line(processor_pattern, f"      {processor_key}: {openai_mode}")
+    elif re.search(r"^    registry: \{\}$", block, flags=re.M):
+        set_line(r"^    registry: \{\}$", f"    registry:\n      {processor_key}: {openai_mode}")
     else:
-        set_line(r"^    registry: \{\}$", f"    registry:\n      openai: {openai_mode}")
+        set_line(r"^    registry:$", f"    registry:\n      {processor_key}: {openai_mode}")
     if openai_mode == "bounded_retention":
         set_line(
             r"^    bounded_retention_days:.*$",
@@ -344,6 +363,11 @@ fi
 [[ -n "$(docker compose ps -q backend 2>/dev/null)" ]] \
   || fail "The stack is not running; start it (docker compose up -d --wait) and re-run this script."
 
+if [[ "$managed_authentik" == "yes" ]]; then
+  log "Enabling authentik GDPR cleanup and applying ${authentik_event_retention_days}-day event retention..."
+  docker compose run --rm backend python -m app.scripts.configure_authentik_privacy
+fi
+
 log "Indexing historical data for erasure lineage (privacy backfill)..."
 docker compose run --rm backend python -m app.scripts.privacy_backfill --dry-run
 docker compose run --rm backend python -m app.scripts.privacy_backfill
@@ -356,7 +380,7 @@ fi
 
 log "Readiness passed. Enabling deletion..."
 apply_privacy_config "true"
-docker compose up -d --wait --force-recreate backend search-worker email-worker migration-worker
+docker compose up -d --wait --force-recreate backend search-worker email-worker inbound-email-worker migration-worker
 
 log "Re-checking readiness with deletion enabled (some checks only run now)..."
 if ! docker compose run --rm backend python -m app.scripts.privacy_readiness; then

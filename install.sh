@@ -318,8 +318,11 @@ if [[ $env_exists -eq 0 || $reconfigure -eq 1 ]]; then
     https://*) cookie_secure="true" ;;
   esac
   if [[ "$mode" == "production" && "$tls_mode" == "off" ]]; then
-    # Your own reverse proxy is in front: keep the bundled proxy private.
+    # Your own reverse proxy is in front: it owns ports 80/443 on this host,
+    # so keep the bundled proxy private on loopback ports it can bind.
     proxy_bind="127.0.0.1"
+    http_port="8080"
+    https_port="8443"
   fi
   if [[ "$auth_mode" == "authentik" ]]; then
     compose_profiles="authentik"
@@ -371,9 +374,10 @@ write_env_file() {
     ak_public_url_value="$authentik_public_url"
   fi
 
-  local backup_recipient existing_ledger_dir
+  local backup_recipient existing_ledger_dir csp_connect_src
   backup_recipient="$(read_env_key .env PRIVACY_BACKUP_AGE_RECIPIENT)"
   existing_ledger_dir="$(read_env_key .env TOW_PRIVACY_LEDGER_DIR)"
+  csp_connect_src="$(read_env_key .env CSP_CONNECT_SRC)"
   [[ -n "$existing_ledger_dir" ]] && ledger_dir="$existing_ledger_dir"
 
   cat > "$target" <<EOF
@@ -396,6 +400,8 @@ PROXY_HTTP_PORT=${http_port}
 PROXY_HTTPS_PORT=${https_port}
 TLS_MODE=${tls_mode}
 PROXY_CLIENT_MAX_BODY_SIZE=25m
+# Optional additional API/WebSocket origins allowed by the browser CSP.
+CSP_CONNECT_SRC=${csp_connect_src}
 TLS_CERT_DIR=./deploy/certs
 TLS_CERT_PATH=/etc/nginx/certs/fullchain.pem
 TLS_KEY_PATH=/etc/nginx/certs/privkey.pem
@@ -439,6 +445,7 @@ DOCS_PORT=3001
 COMPOSE_PROFILES=${compose_profiles}
 AUTHENTIK_TAG=2026.5.0
 AUTHENTIK_PUBLIC_URL=${ak_public_url_value}
+AUTHENTIK_INTERNAL_URL=http://authentik-server:9000
 AUTHENTIK_WEB__PATH=${ak_web_path}
 AUTHENTIK_PATH_ENABLED=${ak_path_enabled}
 AUTHENTIK_BOOTSTRAP_EMAIL=${admin_email:-admin@example.com}
@@ -740,6 +747,10 @@ fi
 
 printf '\n'
 log "TOW is running: ${final_url}"
+if [[ "$mode" == "production" && "$tls_mode" == "off" ]]; then
+  log "Point your reverse proxy at http://127.0.0.1:$(read_env_key .env PROXY_HTTP_PORT) — server block example:"
+  log "https://docs.tow.dev/deployment/production-hardening"
+fi
 if [[ "$effective_auth_mode" == "oidc" || "$effective_auth_mode" == "authentik" ]]; then
   log "Sign in via authentik. Bootstrap admin: $(read_env_key .env AUTHENTIK_BOOTSTRAP_EMAIL) (password: AUTHENTIK_BOOTSTRAP_PASSWORD in .env)."
   log "The first successful OIDC login becomes the TOW server admin."

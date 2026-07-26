@@ -68,6 +68,8 @@ privacy:
     metadata_retention_days: 365
   processors:
     # Every active processor must declare: zdr, delete_api, or bounded_retention.
+    # The declaration is the operator's attestation and may reflect account-level
+    # or contractual controls that are not repeated in each API request.
     registry: {}
     bounded_retention_days:
   backups:
@@ -175,6 +177,20 @@ email:
   worker_batch_size: 10
   worker_poll_seconds: 5
   worker_lock_timeout_seconds: 600
+  inbound:
+    worker_batch_size: 10
+    worker_poll_seconds: 30
+    worker_lease_seconds: 120
+    connect_timeout_seconds: 15
+    messages_per_poll: 50
+    max_message_bytes: 52428800
+    # Private, loopback, link-local, and otherwise unsafe destinations are
+    # rejected unless the exact host is explicitly listed here.
+    allowed_hosts: []
+    # Addresses or domains operated by this TOW deployment. Messages from
+    # these senders are ignored and they are never added as participants.
+    # Entries may be exact addresses, domains, @domains, or *.domains.
+    hosted_addresses: []
   smtp:
     host:
     port: 587
