@@ -169,6 +169,16 @@ search:
   worker_max_attempts: 10
   candidate_limit: 200
 
+migrations:
+  worker_batch_size: 1
+  worker_poll_seconds: 5
+  worker_lock_timeout_seconds: 900
+  worker_max_attempts: 3
+  jira_page_size: 50
+  zammad_page_size: 100
+  notion_page_size: 50
+  meistertask_page_size: 500
+
 email:
   transport: console
   from_address: TOW <noreply@example.com>
