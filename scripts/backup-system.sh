@@ -341,6 +341,8 @@ if [[ -z "$backend_container" ]]; then
   backend_container="$(compose ps --all --quiet backend || true)"
 fi
 [[ -n "$backend_container" ]] || fail "Could not resolve the backend service container."
+backend_image="$(docker inspect "$backend_container" --format '{{.Config.Image}}')"
+[[ -n "$backend_image" ]] || fail "Could not resolve the backend service image."
 
 backend_volume="$(
   docker inspect "$backend_container" \
@@ -372,8 +374,10 @@ fi
 
 authentik_active=0
 authentik_volume_names=()
+authentik_volume_layouts=()
 authentik_volume_labels=(authentik-data authentik-media authentik-templates)
 authentik_volume_destinations=(/data /data/media /templates)
+authentik_data_layout_marker=".tow-authentik-data-layout-v1"
 if [[ "$skip_authentik" -eq 1 ]]; then
   log "Excluding bundled Authentik state by request (--skip-authentik)"
 else
@@ -418,13 +422,48 @@ if [[ "$authentik_active" -eq 1 ]]; then
       done
     fi
     log "Scanning the Authentik ${authentik_volume_labels[$authentik_index]#authentik-} volume for unsupported archive entry types and hard links"
-    unsafe_archive_entry="$(
-      docker run --rm --volume "$authentik_volume:/data:ro" alpine \
-        sh -lc 'find /data -xdev \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit'
-    )"
+    authentik_volume_layout="plain"
+    if [[ "${authentik_volume_labels[$authentik_index]}" == "authentik-data" ]]; then
+      # Authentik 2026.5 ships one structural link in /data:
+      # /data/media -> /media. The separately mounted media volume owns the
+      # target. Preserve the layout without placing a link in the archive:
+      # record an authenticated regular-file marker and reconstruct the one
+      # exact link during restore. Every other link remains forbidden.
+      authentik_volume_layout="$(
+        docker run --rm --volume "$authentik_volume:/data:ro" alpine sh -lc '
+          marker=/data/.tow-authentik-data-layout-v1
+          if [ -e "$marker" ] || [ -L "$marker" ]; then
+            printf "unsafe\n"
+          elif [ -L /data/media ] && [ "$(readlink /data/media)" = /media ]; then
+            if find /data -xdev \
+              \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) \
+              ! -path /data/media -print -quit | grep -q .; then
+              printf "unsafe\n"
+            else
+              printf "media-symlink\n"
+            fi
+          elif find /data -xdev \
+            \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) \
+            -print -quit | grep -q .; then
+            printf "unsafe\n"
+          else
+            printf "plain\n"
+          fi
+        '
+      )"
+      [[ "$authentik_volume_layout" == "plain" || "$authentik_volume_layout" == "media-symlink" ]] \
+        || fail "An Authentik volume contains a link, device, socket, multiply-linked file, or other unsupported entry (path suppressed)."
+      unsafe_archive_entry=""
+    else
+      unsafe_archive_entry="$(
+        docker run --rm --volume "$authentik_volume:/data:ro" alpine \
+          sh -lc 'find /data -xdev \( \( ! -type d ! -type f \) -o \( -type f -links +1 \) \) -print -quit'
+      )"
+    fi
     if [[ -n "$unsafe_archive_entry" ]]; then
       fail "An Authentik volume contains a link, device, socket, multiply-linked file, or other unsupported entry (path suppressed)."
     fi
+    authentik_volume_layouts+=("$authentik_volume_layout")
   done
 fi
 
@@ -454,9 +493,24 @@ if [[ "$authentik_active" -eq 1 ]]; then
   for authentik_index in "${!authentik_volume_names[@]}"; do
     authentik_volume_label="${authentik_volume_labels[$authentik_index]}"
     log "Streaming the Authentik ${authentik_volume_label#authentik-} volume through age encryption"
-    docker run --rm --volume "${authentik_volume_names[$authentik_index]}:/data:ro" alpine \
-      sh -lc 'cd /data && exec tar -czf - .' |
-      age --encrypt --recipient "$age_recipient" --output "$partial_dir/${authentik_volume_label}-volume.tgz.age"
+    if [[ "${authentik_volume_layouts[$authentik_index]}" == "media-symlink" ]]; then
+      layout_dir="$partial_dir/.authentik-data-layout"
+      mkdir -m 0700 "$layout_dir"
+      printf 'media-symlink=/media\n' > "$layout_dir/$authentik_data_layout_marker"
+      chmod 0600 "$layout_dir/$authentik_data_layout_marker"
+      docker run --rm \
+        --volume "${authentik_volume_names[$authentik_index]}:/data:ro" \
+        --volume "$layout_dir:/layout:ro" \
+        --entrypoint tar \
+        "$backend_image" \
+        --exclude=./media -C /data -czf - . -C /layout "$authentik_data_layout_marker" |
+        age --encrypt --recipient "$age_recipient" --output "$partial_dir/${authentik_volume_label}-volume.tgz.age"
+      rm -rf -- "$layout_dir"
+    else
+      docker run --rm --volume "${authentik_volume_names[$authentik_index]}:/data:ro" alpine \
+        sh -lc 'cd /data && exec tar -czf - .' |
+        age --encrypt --recipient "$age_recipient" --output "$partial_dir/${authentik_volume_label}-volume.tgz.age"
+    fi
     artifact_files+=("${authentik_volume_label}-volume.tgz.age")
   done
 fi

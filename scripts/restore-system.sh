@@ -367,6 +367,7 @@ authentik_volume_archives=(
   authentik-templates-volume.tgz.age
 )
 authentik_volume_destinations=(/data /data/media /templates)
+authentik_data_layout_marker=".tow-authentik-data-layout-v1"
 authentik_volume_names=()
 if [[ "$restore_authentik" -eq 1 ]]; then
   authentik_db_running="$(compose_ak ps --quiet authentik-db || true)"
@@ -477,6 +478,21 @@ if [[ "$restore_authentik" -eq 1 ]]; then
       sanitized_tar_rewrite |
       docker run --rm --interactive --volume "$authentik_volume:/data" alpine \
         sh -lc 'exec tar -C /data -xf - -o --no-same-permissions'
+    if [[ "$authentik_index" -eq 0 ]]; then
+      docker run --rm --volume "$authentik_volume:/data" alpine sh -lc '
+        marker=/data/.tow-authentik-data-layout-v1
+        if [ -e "$marker" ] || [ -L "$marker" ]; then
+          [ -f "$marker" ] && [ ! -L "$marker" ] ||
+            { printf "invalid Authentik data layout marker\n" >&2; exit 1; }
+          [ "$(cat "$marker")" = "media-symlink=/media" ] ||
+            { printf "unknown Authentik data layout marker\n" >&2; exit 1; }
+          [ ! -e /data/media ] && [ ! -L /data/media ] ||
+            { printf "refusing to replace an existing Authentik media path\n" >&2; exit 1; }
+          rm -- "$marker"
+          ln -s /media /data/media
+        fi
+      '
+    fi
   done
 
   log "Replacing the Authentik PostgreSQL database while its services are offline"
