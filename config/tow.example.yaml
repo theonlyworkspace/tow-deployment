@@ -44,6 +44,16 @@ security:
   # keep it immutable while external-identity tombstones exist. A missing or
   # changed value makes OIDC fail closed once the first tombstone is recorded.
   privacy_identity_hmac_secret:
+  # Additional CA certificates (PEM) trusted for every outbound TLS connection
+  # the backend makes: the OIDC issuer, IMAP mailboxes, AI/OpenAI-compatible
+  # endpoints, automation webhooks, Meilisearch, and migration sources.
+  # Set this once if those services present certificates issued by an internal
+  # corporate CA; upgrades never touch this file. Paste one or more PEM blocks:
+  # additional_ca_certificates: |
+  #   -----BEGIN CERTIFICATE-----
+  #   ...certificate data...
+  #   -----END CERTIFICATE-----
+  additional_ca_certificates:
 
 # Account deletion (full erasure) stays inert until this section is completed
 # and the readiness endpoint reports ready. Keep the ledger outside /app/data
