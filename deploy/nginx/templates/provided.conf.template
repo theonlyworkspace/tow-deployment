@@ -3,6 +3,12 @@ map $http_upgrade $connection_upgrade {
     '' close;
 }
 
+# TLS terminates at this server, so the proxied scheme is authoritative here;
+# client-supplied X-Forwarded-Proto is deliberately not trusted in this mode.
+map $scheme $tow_forwarded_proto {
+    default $scheme;
+}
+
 server {
     listen 80;
     server_name ${PUBLIC_HOST};
