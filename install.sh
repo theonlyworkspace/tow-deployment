@@ -374,10 +374,12 @@ write_env_file() {
     ak_public_url_value="$authentik_public_url"
   fi
 
-  local backup_recipient existing_ledger_dir csp_connect_src
+  local backup_recipient existing_ledger_dir csp_connect_src google_email_oauth_secret microsoft_email_oauth_secret
   backup_recipient="$(read_env_key .env PRIVACY_BACKUP_AGE_RECIPIENT)"
   existing_ledger_dir="$(read_env_key .env TOW_PRIVACY_LEDGER_DIR)"
   csp_connect_src="$(read_env_key .env CSP_CONNECT_SRC)"
+  google_email_oauth_secret="$(read_env_key .env EMAIL_GOOGLE_OAUTH_CLIENT_SECRET)"
+  microsoft_email_oauth_secret="$(read_env_key .env EMAIL_MICROSOFT_OAUTH_CLIENT_SECRET)"
   [[ -n "$existing_ledger_dir" ]] && ledger_dir="$existing_ledger_dir"
 
   cat > "$target" <<EOF
@@ -435,6 +437,11 @@ EXA_API_KEY=${exa_key}
 # SMTP credentials. Host, port, and TLS live in config/tow.yaml.
 SMTP_USERNAME=${smtp_username}
 SMTP_PASSWORD=${smtp_password}
+
+# Optional native project-mailbox OAuth applications. Client IDs and the
+# Microsoft tenant live under email.oauth in config/tow.yaml.
+EMAIL_GOOGLE_OAUTH_CLIENT_SECRET=${google_email_oauth_secret}
+EMAIL_MICROSOFT_OAUTH_CLIENT_SECRET=${microsoft_email_oauth_secret}
 
 # Optional docs service (docker compose --profile docs).
 DOCS_BIND=127.0.0.1
@@ -494,6 +501,8 @@ GENERATED = {
 # Keys newer releases may introduce, with their safe defaults.
 DEFAULTS = {
     "ORG_AUTH_SECRET_KEY": None,  # None -> generate
+    "EMAIL_GOOGLE_OAUTH_CLIENT_SECRET": "",
+    "EMAIL_MICROSOFT_OAUTH_CLIENT_SECRET": "",
 }
 
 with open(path, encoding="utf-8") as fh:

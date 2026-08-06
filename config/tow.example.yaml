@@ -159,6 +159,12 @@ database:
 background:
   operating_background_enabled: true
   operating_background_interval_seconds: 900
+  # SLA clocks use a lightweight evaluator independent of the general
+  # operating-background cadence so breach automations fire promptly. Keep
+  # this enabled on at least one API replica; other replicas may disable it.
+  sla_evaluator_enabled: true
+  sla_evaluator_interval_seconds: 60
+  sla_evaluator_batch_size: 200
   ticket_conflict_scan_hour_utc: 2
 
 jobs:
@@ -199,7 +205,7 @@ email:
   worker_lock_timeout_seconds: 600
   inbound:
     worker_batch_size: 10
-    worker_poll_seconds: 30
+    worker_poll_seconds: 5
     worker_lease_seconds: 120
     connect_timeout_seconds: 15
     messages_per_poll: 50
@@ -211,6 +217,15 @@ email:
     # these senders are ignored and they are never added as participants.
     # Entries may be exact addresses, domains, @domains, or *.domains.
     hosted_addresses: []
+  # Optional deployment-wide OAuth applications for native mailbox access.
+  # Keep client secrets in .env, never in this YAML file.
+  oauth:
+    google:
+      client_id:
+    microsoft:
+      client_id:
+      # organizations permits work/school Microsoft accounts from any tenant.
+      tenant: organizations
   smtp:
     host:
     port: 587
