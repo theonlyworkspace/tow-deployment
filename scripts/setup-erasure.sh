@@ -380,7 +380,7 @@ fi
 
 log "Readiness passed. Enabling deletion..."
 apply_privacy_config "true"
-docker compose up -d --wait --force-recreate backend search-worker email-worker inbound-email-worker migration-worker
+docker compose up -d --wait --force-recreate backend search-worker email-worker web-push-worker inbound-email-worker migration-worker
 
 log "Re-checking readiness with deletion enabled (some checks only run now)..."
 if ! docker compose run --rm backend python -m app.scripts.privacy_readiness; then

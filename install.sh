@@ -353,13 +353,14 @@ new_secret_or_keep() {
 
 write_env_file() {
   local target="$1"
-  local app_secret postgres_password meili_key privacy_identity privacy_ledger org_auth_key
+  local app_secret postgres_password meili_key privacy_identity privacy_ledger org_auth_key web_push_subscription_secret
   app_secret="$(new_secret_or_keep APP_SECRET)"
   postgres_password="$(new_secret_or_keep POSTGRES_PASSWORD)"
   meili_key="$(new_secret_or_keep MEILISEARCH_API_KEY)"
   privacy_identity="$(new_secret_or_keep PRIVACY_IDENTITY_HMAC_SECRET)"
   privacy_ledger="$(new_secret_or_keep PRIVACY_LEDGER_HMAC_SECRET)"
   org_auth_key="$(new_secret_or_keep ORG_AUTH_SECRET_KEY)"
+  web_push_subscription_secret="$(new_secret_or_keep WEB_PUSH_SUBSCRIPTION_SECRET)"
 
   local ak_secret_key="" ak_pg_password="" ak_bootstrap_password="" ak_bootstrap_token="" oidc_client_secret=""
   local ak_path_enabled="false" ak_web_path="/" ak_public_url_value="http://localhost:9000"
@@ -375,11 +376,16 @@ write_env_file() {
   fi
 
   local backup_recipient existing_ledger_dir csp_connect_src google_email_oauth_secret microsoft_email_oauth_secret
+  local web_push_vapid_public_key web_push_vapid_private_key web_push_vapid_subject
   backup_recipient="$(read_env_key .env PRIVACY_BACKUP_AGE_RECIPIENT)"
   existing_ledger_dir="$(read_env_key .env TOW_PRIVACY_LEDGER_DIR)"
   csp_connect_src="$(read_env_key .env CSP_CONNECT_SRC)"
   google_email_oauth_secret="$(read_env_key .env EMAIL_GOOGLE_OAUTH_CLIENT_SECRET)"
   microsoft_email_oauth_secret="$(read_env_key .env EMAIL_MICROSOFT_OAUTH_CLIENT_SECRET)"
+  web_push_vapid_public_key="$(read_env_key .env WEB_PUSH_VAPID_PUBLIC_KEY)"
+  web_push_vapid_private_key="$(read_env_key .env WEB_PUSH_VAPID_PRIVATE_KEY)"
+  web_push_vapid_subject="$(read_env_key .env WEB_PUSH_VAPID_SUBJECT)"
+  web_push_vapid_subject="${web_push_vapid_subject:-mailto:${admin_email:-admin@example.com}}"
   [[ -n "$existing_ledger_dir" ]] && ledger_dir="$existing_ledger_dir"
 
   cat > "$target" <<EOF
@@ -443,6 +449,12 @@ SMTP_PASSWORD=${smtp_password}
 EMAIL_GOOGLE_OAUTH_CLIENT_SECRET=${google_email_oauth_secret}
 EMAIL_MICROSOFT_OAUTH_CLIENT_SECRET=${microsoft_email_oauth_secret}
 
+# Optional browser Web Push. Add a stable VAPID key pair to enable it.
+WEB_PUSH_VAPID_PUBLIC_KEY=${web_push_vapid_public_key}
+WEB_PUSH_VAPID_PRIVATE_KEY=${web_push_vapid_private_key}
+WEB_PUSH_VAPID_SUBJECT=${web_push_vapid_subject}
+WEB_PUSH_SUBSCRIPTION_SECRET=${web_push_subscription_secret}
+
 # Optional docs service (docker compose --profile docs).
 DOCS_BIND=127.0.0.1
 DOCS_PORT=3001
@@ -497,12 +509,17 @@ GENERATED = {
     "PRIVACY_IDENTITY_HMAC_SECRET",
     "PRIVACY_LEDGER_HMAC_SECRET",
     "ORG_AUTH_SECRET_KEY",
+    "WEB_PUSH_SUBSCRIPTION_SECRET",
 }
 # Keys newer releases may introduce, with their safe defaults.
 DEFAULTS = {
     "ORG_AUTH_SECRET_KEY": None,  # None -> generate
     "EMAIL_GOOGLE_OAUTH_CLIENT_SECRET": "",
     "EMAIL_MICROSOFT_OAUTH_CLIENT_SECRET": "",
+    "WEB_PUSH_VAPID_PUBLIC_KEY": "",
+    "WEB_PUSH_VAPID_PRIVATE_KEY": "",
+    "WEB_PUSH_VAPID_SUBJECT": "mailto:admin@example.com",
+    "WEB_PUSH_SUBSCRIPTION_SECRET": None,
 }
 
 with open(path, encoding="utf-8") as fh:

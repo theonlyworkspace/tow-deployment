@@ -446,7 +446,7 @@ restore_failed() {
 trap restore_failed ERR
 
 log "Stopping every application, schema job, and replica writer"
-compose stop schema-migrate backend search-worker email-worker inbound-email-worker migration-worker frontend meilisearch >/dev/null
+compose stop schema-migrate backend search-worker email-worker web-push-worker inbound-email-worker migration-worker frontend meilisearch >/dev/null
 offline=1
 if [[ "$restore_authentik" -eq 1 ]]; then
   log "Stopping Authentik application services"

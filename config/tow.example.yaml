@@ -171,6 +171,16 @@ jobs:
   ai_queue_max_concurrency: 2
   ai_queue_status_retention_seconds: 300
 
+notifications:
+  web_push:
+    # Set the VAPID keys and subscription secret in .env. These values only
+    # tune the durable delivery worker.
+    worker_batch_size: 50
+    worker_poll_seconds: 5
+    worker_lock_timeout_seconds: 600
+    max_consecutive_failures: 10
+    outbox_retention_days: 30
+
 uploads:
   upload_storage_path: /app/data/uploads
   upload_max_bytes: 26214400

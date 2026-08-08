@@ -59,7 +59,7 @@ values or secrets, it only fills in keys a newer release added. Use
 ```bash
 git pull
 docker compose pull
-docker compose stop backend frontend search-worker email-worker inbound-email-worker migration-worker
+docker compose stop backend frontend search-worker email-worker web-push-worker inbound-email-worker migration-worker
 docker compose up -d --wait
 ```
 
