@@ -32,7 +32,7 @@ ai:
   openai_title_model:
   openai_onboarding_model:
   openai_embedding_model: text-embedding-3-small
-  max_tool_rounds: 100
+  max_tool_rounds: 4
   embedding_dim: 1536
 
 security:
