@@ -28,11 +28,24 @@ ai:
   openai_base_url:
   openai_reasoning_model: gpt-5.2
   openai_reasoning_effort: high
+  # Text emitted inside any configured pair is captured as reasoning instead
+  # of being shown or persisted as part of the answer. Organisation AI
+  # settings can override this list for a provider/model with exotic markers.
+  reasoning_tags:
+    - ["<think>", "</think>"]
+    - ["<thinking>", "</thinking>"]
+    - ["<reason>", "</reason>"]
+    - ["<reasoning>", "</reasoning>"]
+    - ["<thought>", "</thought>"]
   openai_fast_model: gpt-5.2
   openai_title_model:
   openai_onboarding_model:
   openai_embedding_model: text-embedding-3-small
   max_tool_rounds: 4
+  # Leave blank to derive limits from the reasoning model. An automatic output
+  # reserve scales down with an explicitly smaller context window.
+  chat_context_window_tokens:
+  chat_max_output_tokens:
   embedding_dim: 1536
 
 security:
@@ -180,6 +193,30 @@ notifications:
     worker_lock_timeout_seconds: 600
     max_consecutive_failures: 10
     outbox_retention_days: 30
+
+integrations:
+  webhooks:
+    enabled: true
+    inbound_max_body_bytes: 262144
+    inbound_rate_limit: 60
+    inbound_rate_window_seconds: 60
+    auth_clock_skew_seconds: 300
+    secret_rotation_grace_seconds: 86400
+    worker_batch_size: 50
+    worker_poll_seconds: 2
+    worker_lock_timeout_seconds: 60
+    connect_timeout_seconds: 2
+    total_timeout_seconds: 5
+    max_attempts: 6
+    max_consecutive_failures: 5
+    payload_retention_days: 14
+    metadata_retention_days: 30
+    max_response_log_bytes: 4096
+    # Public destinations must be HTTPS on port 443. To reach a private
+    # service, allow both its exact origin and every private network it may
+    # resolve to. Public HTTP and a blanket private-network switch do not exist.
+    private_allowed_origins: []
+    private_allowed_cidrs: []
 
 uploads:
   upload_storage_path: /app/data/uploads

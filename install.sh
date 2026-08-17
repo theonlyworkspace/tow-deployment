@@ -353,8 +353,9 @@ new_secret_or_keep() {
 
 write_env_file() {
   local target="$1"
-  local app_secret postgres_password meili_key privacy_identity privacy_ledger org_auth_key web_push_subscription_secret
+  local app_secret webhook_secret postgres_password meili_key privacy_identity privacy_ledger org_auth_key web_push_subscription_secret
   app_secret="$(new_secret_or_keep APP_SECRET)"
+  webhook_secret="$(new_secret_or_keep WEBHOOK_SECRET_KEY)"
   postgres_password="$(new_secret_or_keep POSTGRES_PASSWORD)"
   meili_key="$(new_secret_or_keep MEILISEARCH_API_KEY)"
   privacy_identity="$(new_secret_or_keep PRIVACY_IDENTITY_HMAC_SECRET)"
@@ -421,6 +422,9 @@ POSTGRES_PASSWORD=${postgres_password}
 
 # Signs sessions and auth state.
 APP_SECRET=${app_secret}
+
+# Encrypts webhook configuration and retained delivery data.
+WEBHOOK_SECRET_KEY=${webhook_secret}
 
 # Search.
 MEILISEARCH_API_KEY=${meili_key}
@@ -504,6 +508,7 @@ def gen() -> str:
 
 GENERATED = {
     "APP_SECRET",
+    "WEBHOOK_SECRET_KEY",
     "POSTGRES_PASSWORD",
     "MEILISEARCH_API_KEY",
     "PRIVACY_IDENTITY_HMAC_SECRET",
@@ -513,6 +518,7 @@ GENERATED = {
 }
 # Keys newer releases may introduce, with their safe defaults.
 DEFAULTS = {
+    "WEBHOOK_SECRET_KEY": None,
     "ORG_AUTH_SECRET_KEY": None,  # None -> generate
     "EMAIL_GOOGLE_OAUTH_CLIENT_SECRET": "",
     "EMAIL_MICROSOFT_OAUTH_CLIENT_SECRET": "",

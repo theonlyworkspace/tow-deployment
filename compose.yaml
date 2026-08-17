@@ -176,6 +176,19 @@ services:
       - -c
       - python -m app.scripts.database_schema_guard && exec python -m app.web_push_worker
 
+  webhook-worker:
+    <<: *backend-common
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    stop_grace_period: 30s
+    command:
+      - /bin/sh
+      - -c
+      - python -m app.scripts.database_schema_guard && exec python -m app.webhook_worker
+
   inbound-email-worker:
     <<: *backend-common
     restart: unless-stopped
