@@ -63,6 +63,9 @@ services:
   db:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
+    # Sized for TOW_BACKEND_WORKERS web processes plus the background worker
+    # services, each with its own connection pool.
+    command: ["postgres", "-c", "max_connections=${TOW_POSTGRES_MAX_CONNECTIONS:-200}"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
@@ -133,7 +136,7 @@ services:
     command:
       - /bin/sh
       - -c
-      - python -m app.scripts.database_schema_guard && exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+      - python -m app.scripts.database_schema_guard && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${TOW_BACKEND_WORKERS:-2}
 
   search-worker:
     <<: *backend-common

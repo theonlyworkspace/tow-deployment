@@ -463,6 +463,15 @@ WEB_PUSH_SUBSCRIPTION_SECRET=${web_push_subscription_secret}
 DOCS_BIND=127.0.0.1
 DOCS_PORT=3001
 
+# Backend sizing. TOW_BACKEND_WORKERS is the number of API processes; raise it
+# so one slow request cannot queue the rest of the UI: one per CPU core up to
+# ~8 cores, about half the cores beyond that (Postgres and the background
+# workers need the rest). TOW_POSTGRES_MAX_CONNECTIONS must cover every
+# process's pool: workers x (DB_POOL_SIZE + DB_MAX_OVERFLOW, 15+10 by
+# default) plus ~100 for the worker services — e.g. 16 workers -> 600.
+TOW_BACKEND_WORKERS=2
+TOW_POSTGRES_MAX_CONNECTIONS=200
+
 # Bundled authentik identity provider. Populated when auth mode is authentik;
 # ignored (and safe to leave empty) with built-in auth.
 COMPOSE_PROFILES=${compose_profiles}
