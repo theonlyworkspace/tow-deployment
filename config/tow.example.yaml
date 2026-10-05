@@ -14,15 +14,18 @@ runtime:
     - 192.168.0.0/16
     - fc00::/7
 
-# Remote Model Context Protocol clients connect at /api/mcp with a TOW personal access token.
-# When public_app_url is set, its host and origin are allowed automatically. These optional
-# additions are useful only when an internal proxy reaches TOW through another host name.
+# Remote Model Context Protocol clients connect at /api/mcp, either by signing in through
+# OAuth or with a TOW personal access token. When public_app_url is set, its host and origin
+# are allowed automatically. Add hosts when an internal proxy reaches TOW through another
+# host name, and origins for browser-based MCP clients served from another site.
+# Set oauth_enabled to false to accept personal access tokens only.
 mcp:
   allowed_hosts: []
   allowed_origins: []
   max_request_bytes: 262144
   max_concurrency: 8
   max_concurrency_per_token: 4
+  oauth_enabled: true
 
 ai:
   openai_base_url:

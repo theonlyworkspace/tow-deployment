@@ -54,6 +54,18 @@ location = /api/mcp {
     client_max_body_size 256k;
 }
 
+# OAuth clients look for the MCP endpoint's discovery documents at the origin
+# root, so these two well-known prefixes are served by the backend.
+location ^~ /.well-known/oauth-protected-resource {
+    proxy_pass $tow_backend_upstream;
+    include /etc/nginx/launch/proxy-headers.conf;
+}
+
+location ^~ /.well-known/oauth-authorization-server {
+    proxy_pass $tow_backend_upstream;
+    include /etc/nginx/launch/proxy-headers.conf;
+}
+
 location ^~ /api/ {
     proxy_pass $tow_backend_upstream;
     include /etc/nginx/launch/proxy-headers.conf;
