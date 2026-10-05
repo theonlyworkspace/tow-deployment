@@ -172,9 +172,23 @@ database:
   worker_pool_timeout_seconds: 10
   worker_pool_recycle_seconds: 1800
 
+features:
+  # The AI brief on Today: a proactive daily review and an hourly AI pulse
+  # generated for each user. While off, neither is generated and the AI brief
+  # widget is hidden from dashboards. Every pulse is an AI call per user and
+  # per project, every hour.
+  ai_brief_enabled: false
+
 background:
   operating_background_enabled: true
   operating_background_interval_seconds: 900
+  # Scheduled AI work (nightly ticket conflict scans, roadmap suggestions, and
+  # the review and pulse when the AI brief is on) is queued only for users and
+  # organisations seen in a browser session this recently.
+  operating_background_user_activity_window_days: 7
+  # Days of hourly pulse history (sessions and their Agent Runs) to keep.
+  # 0 keeps everything.
+  operating_pulse_retention_days: 30
   # SLA clocks use a lightweight evaluator independent of the general
   # operating-background cadence so breach automations fire promptly. Keep
   # this enabled on at least one API replica; other replicas may disable it.
